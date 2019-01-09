@@ -62,9 +62,7 @@ async def mqtt_replay(server: str, input: str = None, delay: int = 0):
         if delay > 0:
             time.sleep(delay/1000)
 
-
-def main():
-    """ Main function"""
+def build_argparser():
     parser = argparse.ArgumentParser(description='MQTT recorder')
 
     parser.add_argument('--server',
@@ -96,8 +94,22 @@ def main():
                         dest='debug',
                         action='store_true',
                         help="Enable debugging")
+    return parser
 
-    args = parser.parse_args()
+
+def validate_arguments(args):
+    if (args.mode == 'record'):
+        print("print")
+    elif (args.mode == 'replay'):
+        print("print")
+    else:
+        assert false, "--mode must be 'record' or 'replay'"
+    return args
+
+
+def main():
+    """ Main function"""
+    args = build_argparser().parse_args().validate_arguments(args)
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
