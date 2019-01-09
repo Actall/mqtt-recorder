@@ -36,11 +36,11 @@ async def mqtt_record(server: str, output: str = None):
         print(json.dumps(record), file=output_file)
 
 
-async def mqtt_replay(server: str, input: str = None, delay: int = 0):
+async def mqtt_replay(server: str, input: str = None, delay: int = 0, realtime: bool = False):
     """Replay MQTT messages"""
 
-    # Record
-    start_time = time.time()
+    replay_start_time = time.time()
+    recording_start_time = None
 
     mqtt = MQTTClient()
     await mqtt.connect(server)
@@ -52,6 +52,14 @@ async def mqtt_replay(server: str, input: str = None, delay: int = 0):
     for line in input_file:
         record = json.loads(line)
         logger.info("%s", record)
+
+        # Throttle publishing if realtime flag is set
+        if realtime:
+            if recording_start_time is none:
+                recording_start_time = msg['time']
+            next_event_time = replay_start_time + (msg['time'] - recording_start_time)
+            time.sleep(next_event_time - time.time())
+
         if 'msg_b64' in record:
             msg = base64.urlsafe_b64decode(record['msg_b64'].encode())
         elif 'msg' in record:
@@ -95,15 +103,15 @@ def build_argparser():
     parser.add_argument('--input',
                         dest='input',
                         metavar='filename',
-                        help='Input file')
+                        help='Recorded file to replay')
     parser.add_argument('--output',
                         dest='output',
                         metavar='filename',
-                        help='Output file')
+                        help='Destination file for recording')
     parser.add_argument('--debug',
                         dest='debug',
                         action='store_true',
-                        help="Enable debugging")
+                        help="Enable debug logging")
     return parser
 
 
@@ -112,8 +120,12 @@ def validate_arguments(args):
     if (args.mode == 'record'):
         assert args.input is None
         assert args.delay == 0
+        assert args.realtime is not None
     elif (args.mode == 'replay'):
         assert args.output is None
+        assert args.realtime == False, "--realtime flag only applies to replay"
+        if args.delay != 0:
+            assert args.realtime, "Cannot use both --delay and --realtime features."
     else:
         assert false, "--mode must be 'record' or 'replay'"
     return args
@@ -134,7 +146,7 @@ def main():
     set_global_config(args)
 
     if args.mode == 'replay':
-        process = mqtt_replay(server=args.server, input=args.input, delay=args.delay)
+        process = mqtt_replay(server=args.server, input=args.input, delay=args.delay, realtime=args.realtime)
     else:
         process = mqtt_record(server=args.server, output=args.output)
 
