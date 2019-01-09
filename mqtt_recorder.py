@@ -99,22 +99,26 @@ def build_argparser():
 
 def validate_arguments(args):
     if (args.mode == 'record'):
-        print("print")
+        assert args.input is None
+        assert args.delay == 0
     elif (args.mode == 'replay'):
-        print("print")
+        assert args.output is None
     else:
         assert false, "--mode must be 'record' or 'replay'"
     return args
 
-
-def main():
-    """ Main function"""
-    args = build_argparser().parse_args().validate_arguments(args)
-
+def set_global_config(args):
+    """ Configure global settings based on args."""
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
+
+def main():
+    """ Main function"""
+    args = build_argparser().parse_args()
+    validate_arguments(args)
+    set_global_config(args)
 
     if args.mode == 'replay':
         process = mqtt_replay(server=args.server, input=args.input, delay=args.delay)
