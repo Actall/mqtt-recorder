@@ -38,6 +38,10 @@ async def mqtt_record(server: str, output: str = None):
 
 async def mqtt_replay(server: str, input: str = None, delay: int = 0):
     """Replay MQTT messages"""
+
+    # Record
+    start_time = time.time()
+
     mqtt = MQTTClient()
     await mqtt.connect(server)
     await mqtt.subscribe(TOPICS)
@@ -62,7 +66,9 @@ async def mqtt_replay(server: str, input: str = None, delay: int = 0):
         if delay > 0:
             time.sleep(delay/1000)
 
+
 def build_argparser():
+    """ Create a parser for command line arguments."""
     parser = argparse.ArgumentParser(description='MQTT recorder')
 
     parser.add_argument('--server',
@@ -82,6 +88,10 @@ def build_argparser():
                         default=0,
                         metavar='milliseconds',
                         help='Delay between replayed events')
+    parser.add_argument('--realtime',
+                        dest='realtime',
+                        action='store_true',
+                        help='Replay events at the same rate they originally occurred.')
     parser.add_argument('--input',
                         dest='input',
                         metavar='filename',
@@ -98,6 +108,7 @@ def build_argparser():
 
 
 def validate_arguments(args):
+    """ Assertians regarding consistency of arguments."""
     if (args.mode == 'record'):
         assert args.input is None
         assert args.delay == 0
@@ -107,12 +118,14 @@ def validate_arguments(args):
         assert false, "--mode must be 'record' or 'replay'"
     return args
 
+
 def set_global_config(args):
     """ Configure global settings based on args."""
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
+
 
 def main():
     """ Main function"""
