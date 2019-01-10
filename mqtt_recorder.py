@@ -7,6 +7,7 @@ import logging
 import sys
 import base64
 import time
+import re
 from hbmqtt.client import MQTTClient, QOS_0, QOS_1, QOS_2
 
 EVERYTHING_TOPIC = '#'  # Subscribe to this topic to receive everything.
@@ -20,7 +21,7 @@ def all_qos_for_topic(topic: str):
     return [(topic, QOS_0), (topic, QOS_1), (topic, QOS_2)]
 
 
-async def mqtt_record(server: str, topic: str, output: str = None):
+async def mqtt_record(server: str, topic: str, topic_filter, output: str = None):
     """Record MQTT messages"""
     mqtt = MQTTClient()
     await mqtt.connect(server)
@@ -32,17 +33,18 @@ async def mqtt_record(server: str, topic: str, output: str = None):
         output_file = sys.stdout
     while True:
         message = await mqtt.deliver_message()
-        record = {
-            'time': time.time(),
-            'qos': message.qos,
-            'retain': message.retain,
-            'topic': message.topic,
-            'msg_b64': base64.urlsafe_b64encode(message.data).decode()
-        }
-        print(json.dumps(record), file=output_file)
+        if topic_filter.match(message.topic):
+            record = {
+                'time': time.time(),
+                'qos': message.qos,
+                'retain': message.retain,
+                'topic': message.topic,
+                'msg_b64': base64.urlsafe_b64encode(message.data).decode()
+            }
+            print(json.dumps(record), file=output_file)
 
 
-async def mqtt_replay(server: str, input: str = None, delay: int = 0, realtime: bool = False):
+async def mqtt_replay(server: str, topic_filter, input: str = None, delay: int = 0, realtime: bool = False):
     """Replay MQTT messages"""
 
     replay_start_time = time.time()
@@ -57,28 +59,29 @@ async def mqtt_replay(server: str, input: str = None, delay: int = 0, realtime: 
         input_file = sys.stdin
     for line in input_file:
         record = json.loads(line)
-        logger.info("%s", record)
+        if topic_filter.match(record['topic']):
+            logger.info("%s", record)
 
-        # Throttle publishing if realtime flag is set
-        if realtime:
-            if recording_start_time is none:
-                recording_start_time = msg['time']
-            next_event_time = replay_start_time + (msg['time'] - recording_start_time)
-            time.sleep(next_event_time - time.time())
+            # Throttle publishing if realtime flag is set
+            if realtime:
+                if recording_start_time is None:
+                    recording_start_time = msg['time']
+                next_event_time = replay_start_time + (msg['time'] - recording_start_time)
+                time.sleep(next_event_time - time.time())
 
-        if 'msg_b64' in record:
-            msg = base64.urlsafe_b64decode(record['msg_b64'].encode())
-        elif 'msg' in record:
-            msg = record['msg'].encode()
-        else:
-            logger.warning("Missing message attribute: %s", record)
-            next
-        logger.info("Publish: %s", record)
-        await mqtt.publish(record['topic'], msg,
-                                 retain=record.get('retain'),
-                                 qos=record.get('qos', QOS_0))
-        if delay > 0:
-            time.sleep(delay/1000)
+            if 'msg_b64' in record:
+                msg = base64.urlsafe_b64decode(record['msg_b64'].encode())
+            elif 'msg' in record:
+                msg = record['msg'].encode()
+            else:
+                logger.warning("Missing message attribute: %s", record)
+                next
+            logger.info("Publish: %s", record)
+            await mqtt.publish(record['topic'], msg,
+                                     retain=record.get('retain'),
+                                     qos=record.get('qos', QOS_0))
+            if delay > 0:
+                time.sleep(delay/1000)
 
 
 def build_argparser():
@@ -133,8 +136,8 @@ def validate_arguments(args):
         assert args.input is None, "--input is a replay-only feature"
         assert args.delay == 0, "--delay is a replay-only feature"
         assert args.realtime is not None, "--realtime is a replay-only feature"
-        if args.channel is None:
-            args.channel = EVERYTHING_CHANNEL
+        if args.topic is None:
+            args.topic = EVERYTHING_TOPIC
     elif (args.mode == 'replay'):
         assert args.output is None, "--output is a record-only feature"
         if args.delay != 0:
@@ -143,8 +146,9 @@ def validate_arguments(args):
     else:
         assert false, "--mode must be 'record' or 'replay'"
 
-    if args.topics_filter is None:
+    if args.topic_filter is None:
         args.topic_filter = ACCEPT_ANYTHING_REGEX
+
     return args
 
 
@@ -162,10 +166,12 @@ def main():
     validate_arguments(args)
     set_global_config(args)
 
+    topic_filter_prog = re.compile(args.topic_filter)
+
     if args.mode == 'replay':
-        process = mqtt_replay(server=args.server, input=args.input, delay=args.delay, realtime=args.realtime)
+        process = mqtt_replay(server=args.server, topic_filter=topic_filter_prog, input=args.input, delay=args.delay, realtime=args.realtime)
     else:
-        process = mqtt_record(server=args.server, topic=args.topic, output=args.output)
+        process = mqtt_record(server=args.server, topic=args.topic, topic_filter=topic_filter_prog, output=args.output)
 
     asyncio.get_event_loop().run_until_complete(process)
 
